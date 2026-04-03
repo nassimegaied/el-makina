@@ -1,0 +1,29 @@
+/* src/components/game/ActionModal.css */
+
+.modal-overlay {
+  @apply absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-opacity duration-300;
+}
+
+.modal-container {
+  @apply bg-gray-900 border-2 border-red-600 rounded-3xl shadow-[0_0_50px_rgba(220,38,38,0.3)] w-full max-w-sm overflow-hidden transform animate-bounce-in;
+}
+
+.modal-header {
+  @apply bg-gradient-to-r from-red-700 via-red-600 to-red-700 text-white font-black uppercase text-center py-3 text-xl tracking-[0.3em] shadow-md;
+}
+
+.modal-body {
+  @apply p-8 text-center bg-gradient-to-b from-gray-800 to-gray-900;
+}
+
+.modal-text {
+  @apply text-white text-xl font-bold mb-8 leading-relaxed drop-shadow-md;
+}
+
+.btn-tchalenji {
+  @apply w-full bg-gradient-to-b from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 text-white font-black text-2xl py-4 rounded-2xl uppercase tracking-widest shadow-[0_5px_0_rgb(153,27,27)] active:shadow-[0_0px_0_rgb(153,27,27)] active:translate-y-[5px] transition-all;
+}
+
+.btn-passer {
+  @apply w-full bg-gradient-to-b from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-gray-300 font-bold text-lg py-3 rounded-2xl uppercase tracking-wider border border-gray-600 shadow-[0_4px_0_rgb(55,65,81)] active:shadow-[0_0px_0_rgb(55,65,81)] active:translate-y-[4px] transition-all;
+}

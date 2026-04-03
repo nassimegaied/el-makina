@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* =========================================
+     CARD STYLES
+  ========================================= */
+  .elmakina-card {
+    @apply w-24 h-36 border-4 rounded-xl shadow-lg flex flex-col items-center justify-between p-2 cursor-pointer transform transition-all duration-300 hover:-translate-y-3 hover:shadow-2xl hover:scale-105;
+  }
+  .elmakina-card-back {
+    @apply w-24 h-36 bg-gradient-to-br from-gray-800 to-black border-4 border-gray-700 rounded-xl shadow-[0_4px_15px_rgba(0,0,0,0.5)] flex items-center justify-center relative overflow-hidden;
+  }
+  .elmakina-card-title {
+    @apply text-center font-black text-[11px] uppercase tracking-tighter leading-none mt-2 drop-shadow-sm;
+  }
+  .elmakina-card-art {
+    @apply w-14 h-14 bg-white/40 rounded-full flex items-center justify-center mt-1 border-2 border-black/10 shadow-inner;
+  }
+  .elmakina-card-role-label {
+    @apply self-start text-[9px] font-black uppercase opacity-60 tracking-wider;
+  }
+
+  /* =========================================
+     ACTION MODAL STYLES
+  ========================================= */
+  .modal-overlay {
+    @apply absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-opacity duration-300;
+  }
+  .modal-container {
+    @apply bg-gray-900 border-2 border-red-600 rounded-3xl shadow-[0_0_50px_rgba(220,38,38,0.3)] w-full max-w-sm overflow-hidden transform animate-bounce-in;
+  }
+  .modal-header {
+    @apply bg-gradient-to-r from-red-700 via-red-600 to-red-700 text-white font-black uppercase text-center py-3 text-xl tracking-[0.3em] shadow-md;
+  }
+  .modal-body {
+    @apply p-8 text-center bg-gradient-to-b from-gray-800 to-gray-900;
+  }
+  .modal-text {
+    @apply text-white text-xl font-bold mb-8 leading-relaxed drop-shadow-md;
+  }
+  .btn-tchalenji {
+    @apply w-full bg-gradient-to-b from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 text-white font-black text-2xl py-4 rounded-2xl uppercase tracking-widest shadow-[0_5px_0_rgb(153,27,27)] active:shadow-[0_0px_0_rgb(153,27,27)] active:translate-y-[5px] transition-all;
+  }
+  .btn-passer {
+    @apply w-full bg-gradient-to-b from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-gray-300 font-bold text-lg py-3 rounded-2xl uppercase tracking-wider border border-gray-600 shadow-[0_4px_0_rgb(55,65,81)] active:shadow-[0_0px_0_rgb(55,65,81)] active:translate-y-[4px] transition-all;
+  }
+
+  /* =========================================
+     GAME BOARD STYLES
+  ========================================= */
+  .game-container { @apply flex flex-col h-screen bg-gray-900 text-white font-sans overflow-hidden relative selection:bg-red-500 selection:text-white; }
+  .lobby-screen { @apply flex flex-col items-center justify-center h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-800 via-gray-900 to-black text-white p-4; }
+  .lobby-title { @apply text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-red-500 to-red-800 mb-2 tracking-[0.2em] drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]; }
+  .lobby-subtitle { @apply text-gray-500 font-bold tracking-[0.4em] uppercase text-sm mb-12; }
+  .lobby-input { @apply px-6 py-4 rounded-xl bg-gray-800 border-2 border-gray-700 text-white font-bold outline-none w-full max-w-xs mb-6 focus:border-red-600 focus:ring-4 focus:ring-red-900 transition-all text-center text-xl shadow-inner; }
+  .btn-join { @apply w-full max-w-xs bg-gradient-to-b from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 py-4 rounded-xl font-black uppercase text-xl shadow-[0_6px_0_rgb(127,29,29)] active:shadow-[0_0px_0_rgb(127,29,29)] active:translate-y-[6px] transition-all; }
+  .btn-start { @apply bg-gradient-to-b from-green-600 to-green-800 hover:from-green-500 hover:to-green-700 px-10 py-5 rounded-2xl font-black uppercase text-2xl shadow-[0_6px_0_rgb(20,83,45)] active:shadow-[0_0px_0_rgb(20,83,45)] active:translate-y-[6px] transition-all ring-4 ring-green-900; }
+
+  .top-ring { @apply h-1/4 bg-gray-950/80 backdrop-blur-md border-b-2 border-gray-800 flex justify-around items-center px-4 shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-10; }
+  .avatar-wrapper { @apply flex flex-col items-center transition-all duration-300; }
+  .avatar-circle { @apply w-16 h-16 rounded-full flex items-center justify-center font-black text-2xl transition-all duration-300 border-4; }
+  .avatar-active { @apply bg-gray-800 border-green-500 shadow-[0_0_25px_rgba(34,197,94,0.4)] text-white scale-110; }
+  .avatar-inactive { @apply bg-gray-900 border-gray-700 text-gray-500 scale-100 shadow-inner; }
+  .stats-badge { @apply flex gap-3 text-sm mt-3 bg-black/80 px-3 py-1.5 rounded-lg border border-gray-800 shadow-md; }
+
+  .middle-table { @apply flex-grow flex flex-col items-center justify-center relative bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-800 via-gray-900 to-black; }
+  .bank-box { @apply text-center bg-gray-900/60 p-8 rounded-full border-4 border-gray-800 shadow-[0_0_50px_rgba(0,0,0,0.6)] backdrop-blur-md min-w-[250px] min-h-[250px] flex flex-col justify-center items-center; }
+
+  .bottom-dashboard { @apply h-2/5 bg-gray-950/90 backdrop-blur-xl border-t-2 border-gray-800 flex flex-col justify-end pb-8 px-6 z-40 shadow-[0_-15px_40px_rgba(0,0,0,0.8)]; }
+  .my-stash { @apply bg-gray-900/80 p-4 rounded-2xl border-2 border-gray-700 shadow-inner min-w-[120px] text-center; }
+  
+  .action-btn-base { @apply px-5 py-3 rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none; }
+  .btn-salary { @apply bg-gradient-to-b from-emerald-500 to-emerald-700 text-white shadow-[0_5px_0_rgb(4,120,87)] active:shadow-[0_0px_0_rgb(4,120,87)] active:translate-y-[5px]; }
+  .btn-role { @apply bg-gradient-to-b from-blue-600 to-blue-800 text-white shadow-[0_5px_0_rgb(30,64,175)] active:shadow-[0_0px_0_rgb(30,64,175)] active:translate-y-[5px]; }
+  .btn-steal { @apply bg-gradient-to-b from-gray-600 to-gray-800 text-white shadow-[0_5px_0_rgb(31,41,55)] active:shadow-[0_0px_0_rgb(31,41,55)] active:translate-y-[5px] border border-gray-500; }
+  .btn-kill { @apply bg-gradient-to-b from-red-700 to-red-900 text-white shadow-[0_5px_0_rgb(127,29,29)] active:shadow-[0_0px_0_rgb(127,29,29)] active:translate-y-[5px] ring-2 ring-red-500/50; }
+  .btn-cancel { @apply bg-gradient-to-b from-gray-700 to-gray-900 text-white shadow-[0_5px_0_rgb(17,24,39)] active:shadow-[0_0px_0_rgb(17,24,39)] active:translate-y-[5px] px-8 py-3 rounded-xl font-bold border border-gray-600; }
+
+  .discard-overlay { @apply absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-md; }
+  .discard-box { @apply bg-gray-900 border-l-4 border-r-4 border-red-600 p-10 rounded-xl text-center shadow-[0_0_80px_rgba(220,38,38,0.3)] max-w-md w-full; }
+}
