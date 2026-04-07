@@ -159,10 +159,24 @@ io.on('connection', (socket) => {
   socket.on('join_table', ({ playerName, roomId }) => {
     if (!rooms[roomId]) rooms[roomId] = initRoom(roomId);
     const room = rooms[roomId];
-    if (room.status === 'playing' || room.status === 'game_over') return;
-    room.players.push({ id: socket.id, name: playerName, coins: 2, cards: [], isAlive: true, lastAction: { fr: "A rejoint", en: "Joined" } });
-    socket.roomId = roomId; socket.join(roomId);
-    io.to(roomId).emit('update_state', room);
+    
+    // ANTI-CRASH & RECONNEXION: Cherche si ce nom existe déjà sur cette table
+    const existingPlayer = room.players.find(p => p.name === playerName);
+    
+    if (existingPlayer) {
+        // C'est un retour ! On met juste à jour son antenne réseau (socket.id)
+        existingPlayer.id = socket.id;
+    } else {
+        // C'est un nouveau joueur
+        if (room.status === 'playing' || room.status === 'game_over') return; // Trop tard pour les nouveaux
+        room.players.push({ id: socket.id, name: playerName, coins: 2, cards: [], isAlive: true, lastAction: { fr: "A rejoint", en: "Joined" } });
+    }
+
+    socket.roomId = roomId; 
+    socket.join(roomId);
+    
+    // Utiliser l'envoi sécurisé pour cacher les cartes !
+    emitSecureStateToAll(room);
   });
 
   socket.on('return_to_lobby', () => {
@@ -309,7 +323,6 @@ io.on('connection', (socket) => {
     room.pendingAction = null; emitSecureStateToAll(room);
   });
 
-  // LA MAGIE DE LA DOUBLE PEINE EST ICI (resumeExecute)
   socket.on('challenge_action', () => {
     const room = rooms[socket.roomId]; if (!room) return;
     const challenger = room.players.find(p => p.id === socket.id);
@@ -327,7 +340,6 @@ io.on('connection', (socket) => {
     if (hasCard) {
         loser = challenger;
         swapCard(room, claimer, roleToCheck);
-        // Au lieu d'exécuter tout de suite, on met l'action en attente dans "resumeExecute" !
         room.pendingDiscard = { 
             playerId: loser.id, playerName: loser.name, wasLying: false, 
             resumeAction: null, 
@@ -359,7 +371,6 @@ io.on('connection', (socket) => {
     
     const isOver = checkWinCondition(room);
     if (!isOver) {
-        // On sauvegarde l'action en attente avant de supprimer le pendingDiscard
         const resumeAct = room.pendingDiscard.resumeAction;
         const resumeExec = room.pendingDiscard.resumeExecute;
         room.pendingDiscard = null;
@@ -367,7 +378,6 @@ io.on('connection', (socket) => {
         if (resumeAct) {
             room.pendingAction = resumeAct;
         } else if (resumeExec) {
-            // C'est ici que l'assassinat ou l'action initiale frappe !
             const needsPause = executeAction(room, resumeExec);
             if (!needsPause) passerAuProchainJoueur(room);
         } else {
@@ -405,9 +415,15 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const room = rooms[socket.roomId];
     if (room) {
-        room.players = room.players.filter(p => p.id !== socket.id);
+        // Ne le supprime complètement QUE s'il est encore dans la salle d'attente.
+        // Si le jeu a commencé, on le garde en mémoire pour qu'il puisse se reconnecter !
+        if (room.status === 'waiting') {
+            room.players = room.players.filter(p => p.id !== socket.id);
+        }
+        
         checkWinCondition(room);
-        io.to(room.roomId).emit('update_state', room);
+        emitSecureStateToAll(room);
+        
         if (room.players.length === 0) delete rooms[socket.roomId];
     }
   });

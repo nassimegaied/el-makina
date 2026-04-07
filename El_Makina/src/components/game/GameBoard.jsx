@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { socket } from '../../socket';
 import Card from '../ui/Card';
 import ActionModal from './ActionModal';
@@ -12,7 +12,11 @@ const GameBoard = () => {
   const [gameState, setGameState] = useState(null);
   
   const [playerName, setPlayerName] = useState('');
-  const [roomCode, setRoomCode] = useState(''); // NOUVEAU: Etat pour le code
+  const [roomCode, setRoomCode] = useState(''); 
+  
+  // NOUVEAU : Mémoire pour la reconnexion automatique invisible
+  const savedPlayerRef = useRef('');
+  const savedRoomRef = useRef('');
   
   const [isTargeting, setIsTargeting] = useState(false);
   const [roleToPlay, setRoleToPlay] = useState(null);
@@ -21,9 +25,28 @@ const GameBoard = () => {
   const [showRules, setShowRules] = useState(false);
   const [revealData, setRevealData] = useState(null);
 
+  // Mise à jour de la mémoire à chaque fois qu'on tape quelque chose
+  useEffect(() => {
+      savedPlayerRef.current = playerName;
+      savedRoomRef.current = roomCode;
+  }, [playerName, roomCode]);
+
   useEffect(() => {
     socket.connect();
-    socket.on('connect', () => setIsConnected(true));
+    
+    // NOUVEAU : Fonction qui s'active dès que le réseau revient
+    const onConnect = () => {
+        setIsConnected(true);
+        // S'il y a eu une micro-coupure, le jeu rejoint la table tout seul !
+        if (savedPlayerRef.current && savedRoomRef.current) {
+            socket.emit('join_table', { 
+                playerName: savedPlayerRef.current.trim(), 
+                roomId: savedRoomRef.current.trim().toUpperCase() 
+            });
+        }
+    };
+
+    socket.on('connect', onConnect);
     socket.on('update_state', (newState) => {
         setGameState(newState);
         setIsTargeting(false); 
@@ -35,19 +58,18 @@ const GameBoard = () => {
     });
 
     return () => {
-      socket.off('connect');
+      socket.off('connect', onConnect);
       socket.off('update_state');
       socket.off('public_reveal');
       socket.disconnect();
     };
   }, []);
 
-  // NOUVEAU : On envoie le roomId au serveur
   const handleJoin = () => { 
       if (playerName.trim() && roomCode.trim()) {
           socket.emit('join_table', { 
               playerName: playerName.trim(), 
-              roomId: roomCode.trim().toUpperCase() // On force en majuscules pour éviter les erreurs
+              roomId: roomCode.trim().toUpperCase() 
           }); 
       }
   };
@@ -93,7 +115,6 @@ const GameBoard = () => {
         {!gameState ? (
           <div className="flex flex-col items-center w-full mt-8 gap-3">
             <input type="text" placeholder={lang === 'fr' ? "Ton Prénom" : "Your Name"} className="lobby-input w-full max-w-sm" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
-            {/* NOUVEAU : Champ pour le code de la room */}
             <input type="text" placeholder={lang === 'fr' ? "Code de la table (ex: 1234)" : "Room Code (e.g: 1234)"} className="lobby-input w-full max-w-sm uppercase" value={roomCode} onChange={(e) => setRoomCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleJoin()} />
             
             <button onClick={handleJoin} className={`btn-join w-full max-w-sm mt-4 ${!playerName.trim() || !roomCode.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -102,7 +123,6 @@ const GameBoard = () => {
           </div>
         ) : (
           <div className="text-center mt-8 bg-gray-900/80 p-6 md:p-8 rounded-3xl border border-gray-800 shadow-2xl w-full max-w-md">
-            {/* On affiche le code de la room pour que les autres le copient ! */}
             <div className="mb-6 p-3 bg-black/50 border border-yellow-600/30 rounded-xl">
                 <p className="text-xs text-gray-400 uppercase tracking-widest">{lang === 'fr' ? "Code de la Table" : "Table Code"}</p>
                 <p className="text-3xl font-black text-yellow-500 tracking-[0.2em]">{gameState.roomId}</p>
@@ -307,7 +327,6 @@ const GameBoard = () => {
           </div>
       )}
 
-      {/* Petit indicateur de ROOM en jeu */}
       <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[50] bg-black/60 px-4 py-1 rounded-b-xl border-x border-b border-gray-800">
         <span className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">ROOM: </span>
         <span className="text-yellow-500 text-xs font-black tracking-widest">{gameState.roomId}</span>
