@@ -14,7 +14,6 @@ const GameBoard = () => {
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState(''); 
   
-  // NOUVEAU : Mémoire pour la reconnexion automatique invisible
   const savedPlayerRef = useRef('');
   const savedRoomRef = useRef('');
   
@@ -25,7 +24,6 @@ const GameBoard = () => {
   const [showRules, setShowRules] = useState(false);
   const [revealData, setRevealData] = useState(null);
 
-  // Mise à jour de la mémoire à chaque fois qu'on tape quelque chose
   useEffect(() => {
       savedPlayerRef.current = playerName;
       savedRoomRef.current = roomCode;
@@ -34,10 +32,8 @@ const GameBoard = () => {
   useEffect(() => {
     socket.connect();
     
-    // NOUVEAU : Fonction qui s'active dès que le réseau revient
     const onConnect = () => {
         setIsConnected(true);
-        // S'il y a eu une micro-coupure, le jeu rejoint la table tout seul !
         if (savedPlayerRef.current && savedRoomRef.current) {
             socket.emit('join_table', { 
                 playerName: savedPlayerRef.current.trim(), 
@@ -52,6 +48,8 @@ const GameBoard = () => {
         setIsTargeting(false); 
         if (!newState.pendingExchange) setExchangeSelection([]);
     });
+    
+    // Le pop-up disparaît tout seul après 4.5s s'ils ne cliquent pas
     socket.on('public_reveal', (data) => {
         setRevealData(data);
         setTimeout(() => setRevealData(null), 4500); 
@@ -236,8 +234,12 @@ const GameBoard = () => {
       
       {showRules && <RulesModal lang={lang} onClose={() => setShowRules(false)} />}
 
+      {/* NOUVEAU: Le pop-up de révélation est maintenant cliquable */}
       {revealData && (
-          <div className="discard-overlay flex flex-col items-center !z-[100] p-4 pointer-events-none">
+          <div 
+            onClick={() => setRevealData(null)} 
+            className="discard-overlay flex flex-col justify-center items-center !z-[100] p-4 cursor-pointer"
+          >
               <div className="bg-gray-900/95 border-2 border-yellow-500 p-8 md:p-10 rounded-3xl text-center shadow-[0_0_80px_rgba(234,179,8,0.5)] backdrop-blur-sm w-full max-w-xl animate-pulse">
                   <h2 className="text-3xl md:text-5xl font-black text-white mb-2 uppercase tracking-widest">{revealData.playerName}</h2>
                   <p className="text-yellow-500 font-bold mb-8 text-xl md:text-2xl">{revealData.text[lang] || revealData.text.fr}</p>
@@ -246,6 +248,9 @@ const GameBoard = () => {
                           <div key={i} className="scale-110 md:scale-125 mx-2"><Card character={c} isFaceUp={true} /></div>
                       ))}
                   </div>
+                  <p className="text-gray-500 text-xs mt-8 uppercase tracking-widest opacity-70">
+                      {lang === 'fr' ? "(Clique n'importe où pour fermer)" : "(Click anywhere to close)"}
+                  </p>
               </div>
           </div>
       )}
