@@ -7,11 +7,12 @@ import RulesModal from './RulesModal';
 const CHARACTERS = [ 'homme_daffaires', 'politicien', 'terroriste', 'voleur', 'colonel', 'percepteur', 'policier' ];
 
 const GameBoard = () => {
-  const [lang, setLang] = useState('fr'); // NOUVEAU: FR ou EN par défaut
-  
+  const [lang, setLang] = useState('fr'); 
   const [isConnected, setIsConnected] = useState(false);
   const [gameState, setGameState] = useState(null);
+  
   const [playerName, setPlayerName] = useState('');
+  const [roomCode, setRoomCode] = useState(''); // NOUVEAU: Etat pour le code
   
   const [isTargeting, setIsTargeting] = useState(false);
   const [roleToPlay, setRoleToPlay] = useState(null);
@@ -28,7 +29,6 @@ const GameBoard = () => {
         setIsTargeting(false); 
         if (!newState.pendingExchange) setExchangeSelection([]);
     });
-
     socket.on('public_reveal', (data) => {
         setRevealData(data);
         setTimeout(() => setRevealData(null), 4500); 
@@ -42,10 +42,18 @@ const GameBoard = () => {
     };
   }, []);
 
-  const handleJoin = () => { if (playerName.trim()) socket.emit('join_table', playerName); };
+  // NOUVEAU : On envoie le roomId au serveur
+  const handleJoin = () => { 
+      if (playerName.trim() && roomCode.trim()) {
+          socket.emit('join_table', { 
+              playerName: playerName.trim(), 
+              roomId: roomCode.trim().toUpperCase() // On force en majuscules pour éviter les erreurs
+          }); 
+      }
+  };
+
   const handleStartGame = () => socket.emit('start_game');
 
-  // Sélecteur de langue UI
   const UI = {
       bank: lang === 'fr' ? "BANQUE" : "BANK",
       myStash: lang === 'fr' ? "Ma Caisse" : "My Stash",
@@ -81,14 +89,26 @@ const GameBoard = () => {
         <LangToggle />
         <h1 className="lobby-title text-4xl md:text-6xl">EL MAKINA</h1>
         <p className="lobby-subtitle text-sm md:text-xl">{lang === 'fr' ? "Le pouvoir s'achète" : "Power can be bought"}</p>
+        
         {!gameState ? (
-          <div className="flex flex-col items-center w-full mt-8">
-            <input type="text" placeholder={lang === 'fr' ? "Ton Prénom" : "Your Name"} className="lobby-input w-full max-w-sm" value={playerName} onChange={(e) => setPlayerName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleJoin()}/>
-            <button onClick={handleJoin} className="btn-join w-full max-w-sm mt-4">{lang === 'fr' ? "Rejoindre la table" : "Join Table"}</button>
+          <div className="flex flex-col items-center w-full mt-8 gap-3">
+            <input type="text" placeholder={lang === 'fr' ? "Ton Prénom" : "Your Name"} className="lobby-input w-full max-w-sm" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
+            {/* NOUVEAU : Champ pour le code de la room */}
+            <input type="text" placeholder={lang === 'fr' ? "Code de la table (ex: 1234)" : "Room Code (e.g: 1234)"} className="lobby-input w-full max-w-sm uppercase" value={roomCode} onChange={(e) => setRoomCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleJoin()} />
+            
+            <button onClick={handleJoin} className={`btn-join w-full max-w-sm mt-4 ${!playerName.trim() || !roomCode.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                {lang === 'fr' ? "Rejoindre la table" : "Join Table"}
+            </button>
           </div>
         ) : (
           <div className="text-center mt-8 bg-gray-900/80 p-6 md:p-8 rounded-3xl border border-gray-800 shadow-2xl w-full max-w-md">
-            <h2 className="text-lg md:text-xl mb-6 font-bold text-gray-400 uppercase tracking-widest">{lang === 'fr' ? "Joueurs à table" : "Players at table"}</h2>
+            {/* On affiche le code de la room pour que les autres le copient ! */}
+            <div className="mb-6 p-3 bg-black/50 border border-yellow-600/30 rounded-xl">
+                <p className="text-xs text-gray-400 uppercase tracking-widest">{lang === 'fr' ? "Code de la Table" : "Table Code"}</p>
+                <p className="text-3xl font-black text-yellow-500 tracking-[0.2em]">{gameState.roomId}</p>
+            </div>
+            
+            <h2 className="text-sm md:text-base mb-4 font-bold text-gray-400 uppercase tracking-widest">{lang === 'fr' ? "Joueurs à table" : "Players at table"}</h2>
             <ul className="mb-8 space-y-3">
                 {gameState.players.map(p => (
                     <li key={p.id} className="text-xl md:text-2xl font-black text-white bg-gray-800 py-2 rounded-lg border border-gray-700">{p.name}</li>
@@ -130,7 +150,6 @@ const GameBoard = () => {
   const me = gameState.players.find(p => p.id === socket.id);
   const opponents = gameState.players.filter(p => p.id !== socket.id);
   const isMyTurn = gameState.players[gameState.currentTurnIndex]?.id === socket.id;
-  
   const pendingDiscard = gameState.pendingDiscard;
   const isPendingDiscard = !!pendingDiscard;
   const iAmLoser = isPendingDiscard && pendingDiscard?.playerId === socket.id;
@@ -155,12 +174,10 @@ const GameBoard = () => {
   const handleRachwa = () => socket.emit('rachwa');
   const handleTax = () => socket.emit('tax_businessman');
   const handleDiscardCard = (index) => { if (iAmLoser) socket.emit('discard_card', index); };
-
   const handleInitiateRole = (role, requiresTarget) => {
       if (requiresTarget) { setIsTargeting(true); setRoleToPlay(role); } 
       else { socket.emit('claim_role', { role: role, targetId: null }); }
   };
-
   const handleOpponentClick = (oppId) => {
       if (isTargeting) {
           if (roleToPlay === 'coup_detat') socket.emit('coup_detat', oppId);
@@ -170,12 +187,10 @@ const GameBoard = () => {
           setIsTargeting(false); setRoleToPlay(null);
       }
   };
-
   const handleColonelSubmit = (guessedRole) => {
       socket.emit('colonel_guess', { targetId: guessTarget, guessedRole: guessedRole });
       setGuessTarget(null);
   };
-
   const exchangePool = iAmExchanger ? [...me.cards, ...pendingExchange.drawnCards] : [];
   const toggleExchangeCard = (index) => {
       setExchangeSelection(prev => {
@@ -184,7 +199,6 @@ const GameBoard = () => {
           return prev;
       });
   };
-
   const confirmExchange = () => {
       if (exchangeSelection.length !== me.cards.length) return;
       const keptCards = exchangeSelection.map(i => exchangePool[i]);
@@ -200,14 +214,12 @@ const GameBoard = () => {
       <LangToggle />
       <button onClick={() => setShowRules(true)} className="absolute top-4 left-4 z-[65] bg-gray-900/80 text-yellow-500 border border-yellow-600/50 rounded-full w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-xl hover:bg-gray-800 hover:scale-110 transition-all shadow-[0_0_15px_rgba(202,138,4,0.3)] backdrop-blur-md">?</button>
       
-      {/* TODO: Si tu le souhaites, tu peux aussi rendre ActionModal et RulesModal bilingues plus tard en leur passant la prop `lang={lang}` */}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
       {revealData && (
           <div className="discard-overlay flex flex-col items-center !z-[100] p-4 pointer-events-none">
               <div className="bg-gray-900/95 border-2 border-yellow-500 p-8 md:p-10 rounded-3xl text-center shadow-[0_0_80px_rgba(234,179,8,0.5)] backdrop-blur-sm w-full max-w-xl animate-pulse">
                   <h2 className="text-3xl md:text-5xl font-black text-white mb-2 uppercase tracking-widest">{revealData.playerName}</h2>
-                  {/* On lit le texte bilingue envoyé par le serveur */}
                   <p className="text-yellow-500 font-bold mb-8 text-xl md:text-2xl">{revealData.text[lang] || revealData.text.fr}</p>
                   <div className="flex justify-center gap-6">
                       {revealData.cards.map((c, i) => (
@@ -249,7 +261,6 @@ const GameBoard = () => {
               <div className="bg-gray-900 border-l-4 border-r-4 border-emerald-500 p-6 md:p-8 rounded-xl text-center shadow-[0_0_80px_rgba(16,185,129,0.3)] max-w-2xl w-full max-h-[90vh] overflow-y-auto">
                   <h2 className="text-2xl md:text-3xl font-black text-emerald-400 mb-2 tracking-widest uppercase">{lang === 'fr' ? "Roulette Russe" : "Russian Roulette"}</h2>
                   <p className="text-sm md:text-base text-gray-300 mb-4 md:mb-6">{lang === 'fr' ? "Quelle carte penses-tu que la cible cache ?" : "Which card do you think the target has?"} <br/><span className="text-xs md:text-sm text-red-400 font-bold">{lang === 'fr' ? "(Erreur = Tu perds 4🪙)" : "(Wrong = Lose 4🪙)"}</span></p>
-                  
                   <div className="flex flex-wrap justify-center gap-2 md:gap-4 mb-6 md:mb-8">
                       {CHARACTERS.map((char, index) => (
                           <div key={index} onClick={() => handleColonelSubmit(char)} className="cursor-pointer hover:scale-105 transition-transform scale-75 md:scale-100">
@@ -279,7 +290,6 @@ const GameBoard = () => {
               <div className="bg-gray-900 border-l-4 border-r-4 border-blue-500 p-6 md:p-8 rounded-xl text-center shadow-[0_0_80px_rgba(59,130,246,0.3)] w-full max-w-3xl mb-4 md:mb-8 max-h-[90vh] overflow-y-auto">
                   <h2 className="text-2xl md:text-3xl font-black text-blue-400 mb-2 tracking-widest uppercase">{lang === 'fr' ? "Secret d'État" : "State Secret"}</h2>
                   <p className="text-sm md:text-base text-gray-300 mb-4 md:mb-6">{lang === 'fr' ? "Choisis" : "Choose"} <span className="font-bold text-white">{me.cards.length}</span> {lang === 'fr' ? "carte(s) à garder en main." : "card(s) to keep."}</p>
-                  
                   <div className="flex justify-center gap-2 md:gap-6 mb-6 md:mb-8 flex-wrap">
                       {exchangePool.map((char, index) => {
                           const isSelected = exchangeSelection.includes(index);
@@ -297,6 +307,12 @@ const GameBoard = () => {
           </div>
       )}
 
+      {/* Petit indicateur de ROOM en jeu */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[50] bg-black/60 px-4 py-1 rounded-b-xl border-x border-b border-gray-800">
+        <span className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">ROOM: </span>
+        <span className="text-yellow-500 text-xs font-black tracking-widest">{gameState.roomId}</span>
+      </div>
+
       <div className="top-ring flex overflow-x-auto snap-x px-4 py-6 gap-4 md:gap-12 md:justify-center w-full mt-8">
         {opponents.map(opp => {
           const isOpponentTurn = gameState.players[gameState.currentTurnIndex]?.id === opp.id;
@@ -313,7 +329,6 @@ const GameBoard = () => {
                         <span className="text-yellow-400 font-bold">{opp.coins} {UI.coins}</span> <span className="text-gray-600 mx-1">|</span> <span className="text-blue-300 font-bold">{opp.cards} {UI.cards}</span>
                       </div>
                       <span className="text-[9px] md:text-[10px] font-bold text-yellow-600/80 mt-1 max-w-[100px] md:max-w-[120px] text-center truncate italic">
-                          {/* Le serveur envoie maintenant un objet avec .fr et .en */}
                           {opp.lastAction?.[lang] || opp.lastAction?.fr || opp.lastAction}
                       </span>
                   </div>

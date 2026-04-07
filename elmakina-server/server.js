@@ -12,7 +12,14 @@ const io = new Server(server, {
 });
 
 const CHARACTERS = [ 'homme_daffaires', 'politicien', 'terroriste', 'voleur', 'colonel', 'percepteur', 'policier' ];
-let gameState = { roomId: "elmakina_main", status: "waiting", players: [], bankCoins: 0, deck: [], currentTurnIndex: 0, pendingAction: null, pendingDiscard: null, pendingExchange: null, pendingPoliceDecision: null, winner: null };
+
+// NOUVEAU : Un dictionnaire qui contient TOUTES les rooms en cours
+const rooms = {};
+
+// NOUVEAU : Fonction pour créer une nouvelle room
+function initRoom(roomId) {
+    return { roomId, status: "waiting", players: [], bankCoins: 0, deck: [], currentTurnIndex: 0, pendingAction: null, pendingDiscard: null, pendingExchange: null, pendingPoliceDecision: null, winner: null };
+}
 
 function createDeck() {
   let newDeck = [];
@@ -24,76 +31,77 @@ function createDeck() {
   return newDeck;
 }
 
-function broadcastReveal(playerName, textObj, cards) {
-    gameState.players.forEach(p => {
+// Les fonctions prennent maintenant "room" en paramètre pour savoir de quelle partie on parle
+function broadcastReveal(room, playerName, textObj, cards) {
+    room.players.forEach(p => {
         io.to(p.id).emit('public_reveal', { playerName, text: textObj, cards });
     });
 }
 
-function swapCard(player, oldCard) {
+function swapCard(room, player, oldCard) {
     const index = player.cards.indexOf(oldCard);
     if (index !== -1) {
         player.cards.splice(index, 1);
-        broadcastReveal(player.name, { fr: "A prouvé son rôle et recycle son :", en: "Proved role and recycled:" }, [oldCard]);
-        gameState.deck.push(oldCard);
-        for (let i = gameState.deck.length - 1; i > 0; i--) {
+        broadcastReveal(room, player.name, { fr: "A prouvé son rôle et recycle son :", en: "Proved role and recycled:" }, [oldCard]);
+        room.deck.push(oldCard);
+        for (let i = room.deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [gameState.deck[i], gameState.deck[j]] = [gameState.deck[j], gameState.deck[i]];
+            [room.deck[i], room.deck[j]] = [room.deck[j], room.deck[i]];
         }
-        player.cards.push(gameState.deck.shift());
+        player.cards.push(room.deck.shift());
     }
 }
 
-function emitSecureStateToAll() {
-    gameState.players.forEach(player => {
+function emitSecureStateToAll(room) {
+    room.players.forEach(player => {
         const stateForPlayer = { 
-            ...gameState, 
-            players: gameState.players.map(p => ({ ...p, cards: p.id === player.id ? p.cards : p.cards.length })),
-            pendingExchange: gameState.pendingExchange ? {
-                playerId: gameState.pendingExchange.playerId,
-                playerName: gameState.pendingExchange.playerName,
-                drawnCards: gameState.pendingExchange.playerId === player.id ? gameState.pendingExchange.drawnCards : []
+            ...room, 
+            players: room.players.map(p => ({ ...p, cards: p.id === player.id ? p.cards : p.cards.length })),
+            pendingExchange: room.pendingExchange ? {
+                playerId: room.pendingExchange.playerId,
+                playerName: room.pendingExchange.playerName,
+                drawnCards: room.pendingExchange.playerId === player.id ? room.pendingExchange.drawnCards : []
             } : null,
-            pendingPoliceDecision: gameState.pendingPoliceDecision ? {
-                policeId: gameState.pendingPoliceDecision.policeId,
-                policeName: gameState.pendingPoliceDecision.policeName,
-                targetId: gameState.pendingPoliceDecision.targetId,
-                targetName: gameState.pendingPoliceDecision.targetName,
-                cardValue: gameState.pendingPoliceDecision.policeId === player.id ? gameState.pendingPoliceDecision.cardValue : null
+            pendingPoliceDecision: room.pendingPoliceDecision ? {
+                policeId: room.pendingPoliceDecision.policeId,
+                policeName: room.pendingPoliceDecision.policeName,
+                targetId: room.pendingPoliceDecision.targetId,
+                targetName: room.pendingPoliceDecision.targetName,
+                cardValue: room.pendingPoliceDecision.policeId === player.id ? room.pendingPoliceDecision.cardValue : null
             } : null
         };
         io.to(player.id).emit('update_state', stateForPlayer);
     });
 }
 
-function checkWinCondition() {
-    if (gameState.status !== 'playing') return false;
-    const alivePlayers = gameState.players.filter(p => p.isAlive);
+function checkWinCondition(room) {
+    if (room.status !== 'playing') return false;
+    const alivePlayers = room.players.filter(p => p.isAlive);
     if (alivePlayers.length === 1) {
-        gameState.status = 'game_over';
-        gameState.winner = alivePlayers[0];
+        room.status = 'game_over';
+        room.winner = alivePlayers[0];
         return true;
     }
     return false;
 }
 
-function passerAuProchainJoueur() {
-    if (gameState.status !== 'playing') return;
+function passerAuProchainJoueur(room) {
+    if (room.status !== 'playing') return;
     let loopCount = 0;
     do {
-        gameState.currentTurnIndex = (gameState.currentTurnIndex + 1) % gameState.players.length;
+        room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
         loopCount++;
-        if (loopCount > gameState.players.length) break; 
-    } while (!gameState.players[gameState.currentTurnIndex].isAlive);
+        if (loopCount > room.players.length) break; 
+    } while (!room.players[room.currentTurnIndex].isAlive);
 }
 
-function setActionLog(playerId, textObj) {
-    const p = gameState.players.find(x => x.id === playerId);
+function setActionLog(room, playerId, textObj) {
+    const p = room.players.find(x => x.id === playerId);
     if (p) p.lastAction = textObj;
 }
 
-function createPendingAction(type, claimer, opts = {}) {
-    return { type, playerClaiming: claimer, hasPassed: [claimer.id], requiredPasses: gameState.players.filter(p => p.isAlive).length, ...opts };
+function createPendingAction(room, type, claimer, opts = {}) {
+    return { type, playerClaiming: claimer, hasPassed: [claimer.id], requiredPasses: room.players.filter(p => p.isAlive).length, ...opts };
 }
 
 function getRoleName(role, lang) {
@@ -101,270 +109,292 @@ function getRoleName(role, lang) {
     return map[role] ? map[role][lang] : role;
 }
 
-function executeAction(action) {
+function executeAction(room, action) {
     if (!action) return false;
-    const claimer = gameState.players.find(p => p.id === action.playerClaiming.id);
+    const claimer = room.players.find(p => p.id === action.playerClaiming.id);
     
     if (action.type === 'foreign_aid') {
         const spaceLeft = 12 - claimer.coins;
         claimer.coins += Math.min(2, spaceLeft);
-        gameState.bankCoins -= Math.min(2, spaceLeft);
-        setActionLog(claimer.id, { fr: "A pris l'aide (+2)", en: "Took Foreign Aid (+2)" });
+        room.bankCoins -= Math.min(2, spaceLeft);
+        setActionLog(room, claimer.id, { fr: "A pris l'aide (+2)", en: "Took Foreign Aid (+2)" });
         return false;
     } else if (action.role === 'homme_daffaires') {
         const spaceLeft = 12 - claimer.coins;
         claimer.coins += Math.min(4, spaceLeft);
-        gameState.bankCoins -= Math.min(4, spaceLeft);
-        setActionLog(claimer.id, { fr: "A pris le business (+4)", en: "Took Business (+4)" });
+        room.bankCoins -= Math.min(4, spaceLeft);
+        setActionLog(room, claimer.id, { fr: "A pris le business (+4)", en: "Took Business (+4)" });
         return false;
     } else if (action.role === 'voleur') {
-        const targetPlayer = gameState.players.find(p => p.id === action.targetId);
+        const targetPlayer = room.players.find(p => p.id === action.targetId);
         if (targetPlayer && targetPlayer.isAlive) {
             const stealAmount = Math.min(2, targetPlayer.coins);
             targetPlayer.coins -= stealAmount;
             claimer.coins = Math.min(12, claimer.coins + stealAmount);
-            setActionLog(claimer.id, { fr: `A volé ${targetPlayer.name}`, en: `Stole from ${targetPlayer.name}` });
+            setActionLog(room, claimer.id, { fr: `A volé ${targetPlayer.name}`, en: `Stole from ${targetPlayer.name}` });
         }
         return false;
     } else if (action.role === 'terroriste') {
         claimer.coins -= 3;
-        gameState.bankCoins += 3;
-        const targetPlayer = gameState.players.find(p => p.id === action.targetId);
+        room.bankCoins += 3;
+        const targetPlayer = room.players.find(p => p.id === action.targetId);
         if (targetPlayer && targetPlayer.isAlive) {
-            setActionLog(claimer.id, { fr: `A frappé ${targetPlayer.name}`, en: `Targeted ${targetPlayer.name}` });
-            gameState.pendingDiscard = { playerId: targetPlayer.id, playerName: targetPlayer.name, wasLying: false, resumeAction: null };
+            setActionLog(room, claimer.id, { fr: `A frappé ${targetPlayer.name}`, en: `Targeted ${targetPlayer.name}` });
+            room.pendingDiscard = { playerId: targetPlayer.id, playerName: targetPlayer.name, wasLying: false, resumeAction: null };
             return true; 
         }
     } else if (action.role === 'politicien') {
-        const drawn = gameState.deck.splice(0, 2);
-        setActionLog(claimer.id, { fr: "Échange ses cartes", en: "Exchanging cards" });
-        gameState.pendingExchange = { playerId: claimer.id, playerName: claimer.name, drawnCards: drawn };
+        const drawn = room.deck.splice(0, 2);
+        setActionLog(room, claimer.id, { fr: "Échange ses cartes", en: "Exchanging cards" });
+        room.pendingExchange = { playerId: claimer.id, playerName: claimer.name, drawnCards: drawn };
         return true; 
     } else if (action.type === 'colonel_guess') {
         claimer.coins -= 4;
-        gameState.bankCoins += 4;
-        const targetPlayer = gameState.players.find(p => p.id === action.targetId);
+        room.bankCoins += 4;
+        const targetPlayer = room.players.find(p => p.id === action.targetId);
         if (targetPlayer && targetPlayer.isAlive) {
             const hasCard = targetPlayer.cards.includes(action.guessedRole);
             if (hasCard) {
                 const cardIndex = targetPlayer.cards.indexOf(action.guessedRole);
                 const removedCard = targetPlayer.cards.splice(cardIndex, 1)[0];
-                broadcastReveal(targetPlayer.name, { fr: "S'est fait exploser son :", en: "Got their card destroyed:" }, [removedCard]);
-                gameState.deck.push(removedCard);
-                for (let i = gameState.deck.length - 1; i > 0; i--) {
+                broadcastReveal(room, targetPlayer.name, { fr: "S'est fait exploser son :", en: "Got their card destroyed:" }, [removedCard]);
+                room.deck.push(removedCard);
+                for (let i = room.deck.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
-                    [gameState.deck[i], gameState.deck[j]] = [gameState.deck[j], gameState.deck[i]];
+                    [room.deck[i], room.deck[j]] = [room.deck[j], room.deck[i]];
                 }
-                setActionLog(claimer.id, { fr: `A eu raison sur ${targetPlayer.name} !`, en: `Guessed correctly on ${targetPlayer.name} !` });
+                setActionLog(room, claimer.id, { fr: `A eu raison sur ${targetPlayer.name} !`, en: `Guessed correctly on ${targetPlayer.name} !` });
                 if (targetPlayer.cards.length === 0) {
                     targetPlayer.isAlive = false;
-                    checkWinCondition();
+                    checkWinCondition(room);
                 }
             } else {
-                setActionLog(claimer.id, { fr: `S'est trompé sur ${targetPlayer.name}`, en: `Guessed wrong on ${targetPlayer.name}` });
+                setActionLog(room, claimer.id, { fr: `S'est trompé sur ${targetPlayer.name}`, en: `Guessed wrong on ${targetPlayer.name}` });
             }
         }
         return false;
     } else if (action.type === 'police_inspect') {
-        const targetPlayer = gameState.players.find(p => p.id === action.targetId);
+        const targetPlayer = room.players.find(p => p.id === action.targetId);
         if (targetPlayer && targetPlayer.isAlive && targetPlayer.cards.length > 0) {
             const cardIndex = Math.floor(Math.random() * targetPlayer.cards.length);
             const cardValue = targetPlayer.cards[cardIndex];
-            gameState.pendingPoliceDecision = {
+            room.pendingPoliceDecision = {
                 policeId: claimer.id, policeName: claimer.name,
                 targetId: targetPlayer.id, targetName: targetPlayer.name,
                 cardIndex: cardIndex, cardValue: cardValue
             };
-            setActionLog(claimer.id, { fr: `Fouille ${targetPlayer.name}`, en: `Inspecting ${targetPlayer.name}` });
+            setActionLog(room, claimer.id, { fr: `Fouille ${targetPlayer.name}`, en: `Inspecting ${targetPlayer.name}` });
             return true; 
         }
         return false;
     } else if (action.role === 'percepteur') {
         let totalTax = 0;
-        gameState.players.forEach(p => {
+        room.players.forEach(p => {
             if (p.id !== claimer.id && p.isAlive && p.coins >= 7) {
                 p.coins -= 1;
                 totalTax += 1;
             }
         });
         claimer.coins = Math.min(12, claimer.coins + totalTax);
-        setActionLog(claimer.id, { fr: "A prélevé la taxe", en: "Collected tax" });
+        setActionLog(room, claimer.id, { fr: "A prélevé la taxe", en: "Collected tax" });
         return false;
     }
     return false;
 }
 
 io.on('connection', (socket) => {
-  socket.on('join_table', (playerName) => {
-    if (gameState.status === 'playing' || gameState.status === 'game_over') return;
-    gameState.players.push({ id: socket.id, name: playerName, coins: 2, cards: [], isAlive: true, lastAction: { fr: "A rejoint", en: "Joined" } });
-    socket.join(gameState.roomId);
-    io.to(gameState.roomId).emit('update_state', gameState);
+  
+  socket.on('join_table', ({ playerName, roomId }) => {
+    // On crée la room si elle n'existe pas
+    if (!rooms[roomId]) rooms[roomId] = initRoom(roomId);
+    
+    const room = rooms[roomId];
+    if (room.status === 'playing' || room.status === 'game_over') return;
+    
+    room.players.push({ id: socket.id, name: playerName, coins: 2, cards: [], isAlive: true, lastAction: { fr: "A rejoint", en: "Joined" } });
+    
+    socket.roomId = roomId; // On sauvegarde l'ID de la room sur ce joueur
+    socket.join(roomId);
+    
+    io.to(roomId).emit('update_state', room);
   });
 
   socket.on('return_to_lobby', () => {
-    if (gameState.status === 'game_over') {
-        gameState.status = 'waiting';
-        gameState.winner = null;
-        gameState.players.forEach(p => { p.coins = 2; p.cards = []; p.isAlive = true; p.lastAction = { fr: "Prêt", en: "Ready" }; });
-        emitSecureStateToAll();
-    }
+    const room = rooms[socket.roomId];
+    if (!room || room.status !== 'game_over') return;
+    room.status = 'waiting';
+    room.winner = null;
+    room.players.forEach(p => { p.coins = 2; p.cards = []; p.isAlive = true; p.lastAction = { fr: "Prêt", en: "Ready" }; });
+    emitSecureStateToAll(room);
   });
 
   socket.on('start_game', () => {
-    if (gameState.players.length < 3) return;
-    gameState.status = 'playing';
-    gameState.deck = createDeck();
-    gameState.bankCoins = 50;
-    const cardsPerPlayer = (gameState.players.length <= 4) ? 3 : 2;
-    gameState.players.forEach(p => { p.cards = gameState.deck.splice(0, cardsPerPlayer); p.lastAction = { fr: "La partie commence", en: "Game Started" }; });
-    emitSecureStateToAll();
+    const room = rooms[socket.roomId];
+    if (!room || room.players.length < 3) return;
+    room.status = 'playing';
+    room.deck = createDeck();
+    room.bankCoins = 50;
+    const cardsPerPlayer = (room.players.length <= 4) ? 3 : 2;
+    room.players.forEach(p => { p.cards = room.deck.splice(0, cardsPerPlayer); p.lastAction = { fr: "La partie commence", en: "Game Started" }; });
+    emitSecureStateToAll(room);
   });
 
   socket.on('take_salary', () => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (gameState.players[gameState.currentTurnIndex]?.id === socket.id && player.isAlive) {
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (room.players[room.currentTurnIndex]?.id === socket.id && player.isAlive) {
         player.coins = Math.min(12, player.coins + 1);
-        gameState.bankCoins -= 1;
-        setActionLog(player.id, { fr: "A pris 1 Salaire", en: "Took 1 Income" });
-        passerAuProchainJoueur();
-        emitSecureStateToAll(); 
+        room.bankCoins -= 1;
+        setActionLog(room, player.id, { fr: "A pris 1 Salaire", en: "Took 1 Income" });
+        passerAuProchainJoueur(room);
+        emitSecureStateToAll(room); 
     }
   });
 
   socket.on('foreign_aid', () => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (gameState.players[gameState.currentTurnIndex]?.id === socket.id && player.isAlive) {
-        gameState.pendingAction = createPendingAction('foreign_aid', player);
-        setActionLog(player.id, { fr: "Demande l'aide", en: "Asks for Aid" });
-        emitSecureStateToAll();
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (room.players[room.currentTurnIndex]?.id === socket.id && player.isAlive) {
+        room.pendingAction = createPendingAction(room, 'foreign_aid', player);
+        setActionLog(room, player.id, { fr: "Demande l'aide", en: "Asks for Aid" });
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('claim_role', (data) => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (gameState.players[gameState.currentTurnIndex]?.id === socket.id && player.isAlive) {
-        gameState.pendingAction = createPendingAction('role_claim', player, { role: data.role, targetId: data.targetId || null });
-        setActionLog(player.id, { fr: `Joue ${getRoleName(data.role, 'fr')}`, en: `Plays ${getRoleName(data.role, 'en')}` });
-        emitSecureStateToAll();
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (room.players[room.currentTurnIndex]?.id === socket.id && player.isAlive) {
+        room.pendingAction = createPendingAction(room, 'role_claim', player, { role: data.role, targetId: data.targetId || null });
+        setActionLog(room, player.id, { fr: `Joue ${getRoleName(data.role, 'fr')}`, en: `Plays ${getRoleName(data.role, 'en')}` });
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('colonel_guess', (data) => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (gameState.players[gameState.currentTurnIndex]?.id === socket.id && player.isAlive && player.coins >= 4) {
-        gameState.pendingAction = createPendingAction('colonel_guess', player, { targetId: data.targetId, guessedRole: data.guessedRole });
-        setActionLog(player.id, { fr: "Pari du Colonel", en: "Colonel's Guess" });
-        emitSecureStateToAll();
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (room.players[room.currentTurnIndex]?.id === socket.id && player.isAlive && player.coins >= 4) {
+        room.pendingAction = createPendingAction(room, 'colonel_guess', player, { targetId: data.targetId, guessedRole: data.guessedRole });
+        setActionLog(room, player.id, { fr: "Pari du Colonel", en: "Colonel's Guess" });
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('police_inspect', (targetId) => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (gameState.players[gameState.currentTurnIndex]?.id === socket.id && player.isAlive) {
-        gameState.pendingAction = createPendingAction('police_inspect', player, { targetId });
-        setActionLog(player.id, { fr: "Interrogatoire", en: "Interrogation" });
-        emitSecureStateToAll();
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (room.players[room.currentTurnIndex]?.id === socket.id && player.isAlive) {
+        room.pendingAction = createPendingAction(room, 'police_inspect', player, { targetId });
+        setActionLog(room, player.id, { fr: "Interrogatoire", en: "Interrogation" });
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('block_action', (blockRole) => {
-    const blocker = gameState.players.find(p => p.id === socket.id);
-    if (blocker && blocker.isAlive && gameState.pendingAction) {
-        setActionLog(blocker.id, { fr: `Bloque (${getRoleName(blockRole, 'fr')})`, en: `Blocks (${getRoleName(blockRole, 'en')})` });
-        gameState.pendingAction = createPendingAction('block', blocker, { role: blockRole, originalAction: gameState.pendingAction });
-        emitSecureStateToAll();
+    const room = rooms[socket.roomId]; if (!room) return;
+    const blocker = room.players.find(p => p.id === socket.id);
+    if (blocker && blocker.isAlive && room.pendingAction) {
+        setActionLog(room, blocker.id, { fr: `Bloque (${getRoleName(blockRole, 'fr')})`, en: `Blocks (${getRoleName(blockRole, 'en')})` });
+        room.pendingAction = createPendingAction(room, 'block', blocker, { role: blockRole, originalAction: room.pendingAction });
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('tax_businessman', () => {
-    const taxer = gameState.players.find(p => p.id === socket.id);
-    if (taxer && taxer.isAlive && gameState.pendingAction?.role === 'homme_daffaires') {
-        if (gameState.pendingAction.type === 'role_claim') {
-            gameState.pendingAction = createPendingAction('tax_businessman', taxer, { role: 'percepteur', taxers: [taxer], originalAction: gameState.pendingAction });
-        } else if (gameState.pendingAction.type === 'tax_businessman' && gameState.pendingAction.taxers.length < 3) {
-            gameState.pendingAction.taxers.push(taxer);
+    const room = rooms[socket.roomId]; if (!room) return;
+    const taxer = room.players.find(p => p.id === socket.id);
+    if (taxer && taxer.isAlive && room.pendingAction?.role === 'homme_daffaires') {
+        if (room.pendingAction.type === 'role_claim') {
+            room.pendingAction = createPendingAction(room, 'tax_businessman', taxer, { role: 'percepteur', taxers: [taxer], originalAction: room.pendingAction });
+        } else if (room.pendingAction.type === 'tax_businessman' && room.pendingAction.taxers.length < 3) {
+            room.pendingAction.taxers.push(taxer);
         }
-        setActionLog(taxer.id, { fr: "Taxe !", en: "Taxes!" });
-        emitSecureStateToAll();
+        setActionLog(room, taxer.id, { fr: "Taxe !", en: "Taxes!" });
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('coup_detat', (targetId) => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (gameState.players[gameState.currentTurnIndex]?.id === socket.id && player.isAlive && player.coins >= 7) {
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (room.players[room.currentTurnIndex]?.id === socket.id && player.isAlive && player.coins >= 7) {
         player.coins -= 7;
-        gameState.bankCoins += 7;
-        gameState.pendingAction = createPendingAction('coup_detat', player, { targetId });
-        setActionLog(player.id, { fr: "Coup d'État !", en: "Coup d'État !" });
-        emitSecureStateToAll();
+        room.bankCoins += 7;
+        room.pendingAction = createPendingAction(room, 'coup_detat', player, { targetId });
+        setActionLog(room, player.id, { fr: "Coup d'État !", en: "Coup d'État !" });
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('rachwa', () => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (player && player.isAlive && player.coins >= 9 && gameState.pendingAction?.type === 'coup_detat') {
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (player && player.isAlive && player.coins >= 9 && room.pendingAction?.type === 'coup_detat') {
         player.coins -= 9;
-        gameState.bankCoins += 9;
-        gameState.pendingAction = null;
-        setActionLog(player.id, { fr: "Rachwa (Pot-de-vin) !", en: "Paid a bribe!" });
-        passerAuProchainJoueur();
-        emitSecureStateToAll();
+        room.bankCoins += 9;
+        room.pendingAction = null;
+        setActionLog(room, player.id, { fr: "Rachwa (Pot-de-vin) !", en: "Paid a bribe!" });
+        passerAuProchainJoueur(room);
+        emitSecureStateToAll(room);
     }
   });
 
   socket.on('pass_action', () => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (!player || !player.isAlive || !gameState.pendingAction || gameState.pendingAction.hasPassed.includes(socket.id)) return;
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player || !player.isAlive || !room.pendingAction || room.pendingAction.hasPassed.includes(socket.id)) return;
 
-    gameState.pendingAction.hasPassed.push(socket.id);
-    setActionLog(player.id, { fr: "Passe", en: "Passes" });
+    room.pendingAction.hasPassed.push(socket.id);
+    setActionLog(room, player.id, { fr: "Passe", en: "Passes" });
 
-    if (gameState.pendingAction.hasPassed.length >= gameState.pendingAction.requiredPasses) {
+    if (room.pendingAction.hasPassed.length >= room.pendingAction.requiredPasses) {
         let needsPause = false;
-        if (gameState.pendingAction.type === 'block') {
+        if (room.pendingAction.type === 'block') {
             needsPause = false;
-        } else if (gameState.pendingAction.type === 'coup_detat') {
-            const target = gameState.players.find(p => p.id === gameState.pendingAction.targetId);
-            gameState.pendingDiscard = { playerId: target.id, playerName: target.name, wasLying: false, resumeAction: null };
+        } else if (room.pendingAction.type === 'coup_detat') {
+            const target = room.players.find(p => p.id === room.pendingAction.targetId);
+            room.pendingDiscard = { playerId: target.id, playerName: target.name, wasLying: false, resumeAction: null };
             needsPause = true;
-        } else if (gameState.pendingAction.type === 'tax_businessman') {
-            const taxers = gameState.pendingAction.taxers;
-            const businessman = gameState.players.find(p => p.id === gameState.pendingAction.originalAction.playerClaiming.id);
+        } else if (room.pendingAction.type === 'tax_businessman') {
+            const taxers = room.pendingAction.taxers;
+            const businessman = room.players.find(p => p.id === room.pendingAction.originalAction.playerClaiming.id);
             businessman.coins = Math.min(12, businessman.coins + Math.max(0, 4 - taxers.length));
             taxers.forEach(t => {
-                const p = gameState.players.find(x => x.id === t.id);
+                const p = room.players.find(x => x.id === t.id);
                 p.coins = Math.min(12, p.coins + 1);
             });
             needsPause = false;
         } else {
-            needsPause = executeAction(gameState.pendingAction);
+            needsPause = executeAction(room, room.pendingAction);
         }
-        gameState.pendingAction = null;
-        if (!needsPause) passerAuProchainJoueur();
+        room.pendingAction = null;
+        if (!needsPause) passerAuProchainJoueur(room);
     }
-    emitSecureStateToAll();
+    emitSecureStateToAll(room);
   });
 
   socket.on('challenge_taxer', (taxerId) => {
-    const challenger = gameState.players.find(p => p.id === socket.id);
-    const taxer = gameState.players.find(p => p.id === taxerId);
-    if (!challenger || !taxer || !gameState.pendingAction) return;
+    const room = rooms[socket.roomId]; if (!room) return;
+    const challenger = room.players.find(p => p.id === socket.id);
+    const taxer = room.players.find(p => p.id === taxerId);
+    if (!challenger || !taxer || !room.pendingAction) return;
     const hasCard = taxer.cards.includes('percepteur');
     let loser;
-    if (hasCard) { loser = challenger; swapCard(taxer, 'percepteur'); } 
-    else { loser = taxer; gameState.pendingAction.taxers = gameState.pendingAction.taxers.filter(t => t.id !== taxerId); }
-    gameState.pendingDiscard = { playerId: loser.id, playerName: loser.name, wasLying: !hasCard, resumeAction: gameState.pendingAction };
-    gameState.pendingAction = null;
-    emitSecureStateToAll();
+    if (hasCard) { loser = challenger; swapCard(room, taxer, 'percepteur'); } 
+    else { loser = taxer; room.pendingAction.taxers = room.pendingAction.taxers.filter(t => t.id !== taxerId); }
+    room.pendingDiscard = { playerId: loser.id, playerName: loser.name, wasLying: !hasCard, resumeAction: room.pendingAction };
+    room.pendingAction = null;
+    emitSecureStateToAll(room);
   });
 
   socket.on('challenge_action', () => {
-    const challenger = gameState.players.find(p => p.id === socket.id);
-    if (!challenger || !challenger.isAlive || !gameState.pendingAction) return;
+    const room = rooms[socket.roomId]; if (!room) return;
+    const challenger = room.players.find(p => p.id === socket.id);
+    if (!challenger || !challenger.isAlive || !room.pendingAction) return;
 
-    const action = gameState.pendingAction;
-    const claimer = gameState.players.find(p => p.id === action.playerClaiming.id);
+    const action = room.pendingAction;
+    const claimer = room.players.find(p => p.id === action.playerClaiming.id);
     let roleToCheck = action.role;
     if (action.type === 'colonel_guess') roleToCheck = 'colonel';
     if (action.type === 'police_inspect') roleToCheck = 'policier';
@@ -374,77 +404,89 @@ io.on('connection', (socket) => {
 
     if (hasCard) {
         loser = challenger;
-        swapCard(claimer, roleToCheck);
-        if (['role_claim', 'colonel_guess', 'police_inspect'].includes(action.type)) executeAction(action);
+        swapCard(room, claimer, roleToCheck);
+        if (['role_claim', 'colonel_guess', 'police_inspect'].includes(action.type)) executeAction(room, action);
     } else {
         loser = claimer;
-        if (action.type === 'block') executeAction(action.originalAction);
+        if (action.type === 'block') executeAction(room, action.originalAction);
     }
 
-    gameState.pendingAction = null;
-    gameState.pendingDiscard = { playerId: loser.id, playerName: loser.name, wasLying: !hasCard, resumeAction: null };
-    emitSecureStateToAll();
+    room.pendingAction = null;
+    room.pendingDiscard = { playerId: loser.id, playerName: loser.name, wasLying: !hasCard, resumeAction: null };
+    emitSecureStateToAll(room);
   });
 
   socket.on('discard_card', (cardIndex) => {
-    const player = gameState.players.find(p => p.id === socket.id);
-    if (!player || !gameState.pendingDiscard || gameState.pendingDiscard.playerId !== socket.id) return;
-    const deadCard = player.cards.splice(cardIndex, 1)[0];
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player || !room.pendingDiscard || room.pendingDiscard.playerId !== socket.id) return;
     
-    broadcastReveal(player.name, { fr: "A perdu la carte :", en: "Lost the card:" }, [deadCard]);
+    const deadCard = player.cards.splice(cardIndex, 1)[0];
+    broadcastReveal(room, player.name, { fr: "A perdu la carte :", en: "Lost the card:" }, [deadCard]);
 
-    gameState.deck.push(deadCard);
-    for (let i = gameState.deck.length - 1; i > 0; i--) {
+    room.deck.push(deadCard);
+    for (let i = room.deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [gameState.deck[i], gameState.deck[j]] = [gameState.deck[j], gameState.deck[i]];
+        [room.deck[i], room.deck[j]] = [room.deck[j], room.deck[i]];
     }
     if (player.cards.length === 0) player.isAlive = false;
-    const isOver = checkWinCondition();
+    
+    const isOver = checkWinCondition(room);
     if (!isOver) {
-        if (gameState.pendingDiscard.resumeAction) gameState.pendingAction = gameState.pendingDiscard.resumeAction;
-        else passerAuProchainJoueur();
+        if (room.pendingDiscard.resumeAction) room.pendingAction = room.pendingDiscard.resumeAction;
+        else passerAuProchainJoueur(room);
     }
-    gameState.pendingDiscard = null;
-    emitSecureStateToAll();
+    room.pendingDiscard = null;
+    emitSecureStateToAll(room);
   });
 
   socket.on('exchange_cards', (kept, returned) => {
-    const player = gameState.players.find(p => p.id === socket.id);
+    const room = rooms[socket.roomId]; if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
     player.cards = kept;
     
-    broadcastReveal(player.name, { fr: "A défaussé au fond du paquet :", en: "Discarded to the deck:" }, returned);
+    broadcastReveal(room, player.name, { fr: "A défaussé au fond du paquet :", en: "Discarded to the deck:" }, returned);
 
-    gameState.deck.push(...returned);
-    for (let i = gameState.deck.length - 1; i > 0; i--) {
+    room.deck.push(...returned);
+    for (let i = room.deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [gameState.deck[i], gameState.deck[j]] = [gameState.deck[j], gameState.deck[i]];
+        [room.deck[i], room.deck[j]] = [room.deck[j], room.deck[i]];
     }
-    gameState.pendingExchange = null;
-    passerAuProchainJoueur();
-    emitSecureStateToAll();
+    room.pendingExchange = null;
+    passerAuProchainJoueur(room);
+    emitSecureStateToAll(room);
   });
 
   socket.on('police_decision', (decision) => {
-    const target = gameState.players.find(p => p.id === gameState.pendingPoliceDecision.targetId);
+    const room = rooms[socket.roomId]; if (!room) return;
+    const target = room.players.find(p => p.id === room.pendingPoliceDecision.targetId);
     if (decision === 'change') {
-        const oldCard = target.cards.splice(gameState.pendingPoliceDecision.cardIndex, 1)[0];
-        broadcastReveal(target.name, { fr: "A été forcé de jeter :", en: "Was forced to drop:" }, [oldCard]);
-        gameState.deck.push(oldCard);
-        for (let i = gameState.deck.length - 1; i > 0; i--) {
+        const oldCard = target.cards.splice(room.pendingPoliceDecision.cardIndex, 1)[0];
+        broadcastReveal(room, target.name, { fr: "A été forcé de jeter :", en: "Was forced to drop:" }, [oldCard]);
+        room.deck.push(oldCard);
+        for (let i = room.deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [gameState.deck[i], gameState.deck[j]] = [gameState.deck[j], gameState.deck[i]];
+            [room.deck[i], room.deck[j]] = [room.deck[j], room.deck[i]];
         }
-        target.cards.push(gameState.deck.shift());
+        target.cards.push(room.deck.shift());
     }
-    gameState.pendingPoliceDecision = null;
-    passerAuProchainJoueur();
-    emitSecureStateToAll();
+    room.pendingPoliceDecision = null;
+    passerAuProchainJoueur(room);
+    emitSecureStateToAll(room);
   });
 
   socket.on('disconnect', () => {
-    gameState.players = gameState.players.filter(p => p.id !== socket.id);
-    checkWinCondition();
-    io.to(gameState.roomId).emit('update_state', gameState);
+    const room = rooms[socket.roomId];
+    if (room) {
+        room.players = room.players.filter(p => p.id !== socket.id);
+        checkWinCondition(room);
+        io.to(room.roomId).emit('update_state', room);
+        
+        // NOUVEAU: Si la room est vide, on la supprime pour ne pas saturer le serveur
+        if (room.players.length === 0) {
+            delete rooms[socket.roomId];
+        }
+    }
   });
 });
 
