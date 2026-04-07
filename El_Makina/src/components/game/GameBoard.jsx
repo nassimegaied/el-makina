@@ -214,7 +214,7 @@ const GameBoard = () => {
       <LangToggle />
       <button onClick={() => setShowRules(true)} className="absolute top-4 left-4 z-[65] bg-gray-900/80 text-yellow-500 border border-yellow-600/50 rounded-full w-10 h-10 md:w-12 md:h-12 flex items-center justify-center font-black text-xl hover:bg-gray-800 hover:scale-110 transition-all shadow-[0_0_15px_rgba(202,138,4,0.3)] backdrop-blur-md">?</button>
       
-      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showRules && <RulesModal lang={lang} onClose={() => setShowRules(false)} />}
 
       {revealData && (
           <div className="discard-overlay flex flex-col items-center !z-[100] p-4 pointer-events-none">
